@@ -1,0 +1,158 @@
+hub:
+  db:
+    pvc:
+      storage: 50Gi
+      storageClassName: gp3
+  authenticatePrometheus: false
+  command: ["sh", "-c", "pip install boto3 && jupyterhub --config /usr/local/etc/jupyterhub/jupyterhub_config.py"]
+  config:
+    GenericOAuthenticator:
+      oauth_callback_url: ${jupyterdomain}
+      client_id: ${client_id}
+      client_secret: ${client_secret}
+      authorize_url: ${authorize_url}
+      token_url: ${token_url}
+      userdata_url: ${userdata_url}
+      scope:
+        - openid
+        - email
+      username_key: "username"
+      login_service : "AWS Cognito"
+      userdata_method: "POST"
+    JupyterHub:
+      authenticator_class: generic-oauth
+  extraConfig:
+    jupyterhub_config.py: |-
+      c.KubeSpawner.start_timeout = 1200
+      c.Authenticator.enable_auth_state = True
+
+    cognito_config.py: |-
+      import boto3
+      def auth_state_hook(spawner, auth_state):
+        client_idp = boto3.client('cognito-idp', region_name="${region}")
+        auth_response = client_idp.initiate_auth(
+          AuthFlow="REFRESH_TOKEN_AUTH",
+          AuthParameters={
+            "REFRESH_TOKEN": auth_state['refresh_token'],
+            "SECRET_HASH": "${client_secret}"
+          },
+          ClientId="${client_id}"
+        )
+        id_token = auth_response["AuthenticationResult"]["IdToken"]
+        client_identity = boto3.client("cognito-identity", region_name="${region}")
+        identity_response = client_identity.get_id(
+          IdentityPoolId="${identity_pool_id}",
+          Logins={
+            f"cognito-idp.${region}.amazonaws.com/${user_pool_id}": id_token
+          }
+        )
+        identity_id = identity_response['IdentityId']
+        credentials = client_identity.get_credentials_for_identity(
+          IdentityId=identity_id,
+          Logins={
+            f"cognito-idp.${region}.amazonaws.com/${user_pool_id}": id_token
+          }
+        )
+        key = credentials["Credentials"]["AccessKeyId"]
+        secret = credentials["Credentials"]["SecretKey"]
+        token = credentials["Credentials"]["SessionToken"]
+        spawner.environment['AWS_ACCESS_KEY_ID'] = key
+        spawner.environment['AWS_SECRET_ACCESS_KEY'] = secret
+        spawner.environment['AWS_SESSION_TOKEN'] = token
+
+      c.Spawner.auth_state_hook = auth_state_hook
+
+proxy:
+  https:
+    enabled: true
+    type: offload
+  service:
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-ssl-cert: ${ssl_cert_arn}
+      service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "https"
+      service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
+      service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "3600"
+      service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+      service.beta.kubernetes.io/aws-load-balancer-type: external
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
+      service.beta.kubernetes.io/aws-load-balancer-ip-address-type: ipv4
+
+singleuser:
+  startTimeout: 1200 # 20 mins to spin up a notebook server for GPU including the image pull
+  profileList:
+    - display_name: "Workshop GPU (g6e.xlarge / L40S)"
+      default: true
+      description: "1× NVIDIA L40S (46 GB) | on-demand | Karpenter"
+      kubespawner_override:
+        image: 384484506514.dkr.ecr.us-west-2.amazonaws.com/workshop/jupyter:v0.2
+        tolerations:
+          - key: "nvidia.com/gpu"
+            operator: "Exists"
+            effect: "NoSchedule"
+        extra_resource_limits:
+          nvidia.com/gpu: "1"
+        cpu_limit: 4
+        cpu_guarantee: 2
+        mem_limit: 32G
+        mem_guarantee: 16G
+        cmd: "start-singleuser.sh"
+  storage:
+    type: "static"
+    static:
+      pvcName: "efs-persist"
+      subPath: "{username}"
+    extraVolumes:
+    - name: jupyterhub-shared
+      persistentVolumeClaim:
+        claimName: efs-persist-shared
+    extraVolumeMounts:
+    - name: jupyterhub-shared
+      mountPath: /home/shared
+      readOnly: false
+  serviceAccountName: ${jupyter_single_user_sa_name}
+  allowPrivilegeEscalation: true
+  extraPodConfig: # This is needed for Jovyan user running in every single pod, access the Service Account
+    securityContext:
+        fsGroup: 100
+  extraEnv: # Sudo needed to configure the proper permissions to start the notebook instance
+    GRANT_SUDO: "yes"
+    NOTEBOOK_ARGS: "--allow-root"
+    CHOWN_HOME: "yes"
+    CHOWN_HOME_OPTS: "-R"
+    CHOWN_EXTRA: "/home/shared"
+    HUGGING_FACE_HUB_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: hf-token
+          key: token
+  uid: 0
+  fsGid: 0
+  cmd: null
+
+# Optimizations configured according to this doc https://z2jh.jupyter.org/en/latest/administrator/optimization.html
+scheduling:
+  userScheduler:
+    enabled: true
+  podPriority:
+    enabled: true
+  userPlaceholder:
+    enabled: false
+    replicas: 1
+
+prePuller:
+  hook:
+    enabled: false
+  continuous:
+    # NOTE: if used with Karpenter, also add user-placeholders
+    enabled: false
+
+global:
+  safeToShowValues: false
+
+cull:
+  enabled: true
+  timeout: 1800    # 30 minutes idle → shut down server
+  every: 300       # poll every 5 minutes
+  maxAge: 0        # no hard wall-clock limit
+  concurrency: 5

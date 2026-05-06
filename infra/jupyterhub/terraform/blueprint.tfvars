@@ -1,7 +1,16 @@
-name                      = "jupyterhub"
-enable_aws_efs_csi_driver = true
-enable_jupyterhub         = true
-# region                    = "us-west-2"
+name                       = "workshop-jhub"
+region                     = "us-west-2"
+enable_aws_efs_csi_driver  = true
+enable_jupyterhub          = true
+enable_external_dns        = true
+
+# Auth
+jupyter_hub_auth_mechanism = "cognito"
+cognito_custom_domain      = "workshop-jhub-384484"  # globally unique Cognito hosted-UI prefix
+jupyterhub_domain          = "jupyter.wandre.dev"
+acm_certificate_domain     = "jupyter.wandre.dev"    # must match Route53 zone name exactly
+
+huggingface_token          = "DUMMY_TOKEN_REPLACE_ME"
 # eks_cluster_version       = "1.34"
 
 # -------------------------------------------------------------------------------------
