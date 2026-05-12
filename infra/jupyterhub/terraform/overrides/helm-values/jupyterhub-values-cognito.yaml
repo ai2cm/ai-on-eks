@@ -16,11 +16,43 @@ hub:
       scope:
         - openid
         - email
-      username_key: "username"
+      username_key: "email"
       login_service : "AWS Cognito"
       userdata_method: "POST"
     JupyterHub:
       authenticator_class: generic-oauth
+    Authenticator:
+      admin_users:
+        - "andrep@allenai.org"
+      allowed_users:
+        - "andrep@allenai.org"
+        - "vmunte@bu.edu"
+        - "hungjui@rams.colostate.edu"
+        - "Christopher.Slocum@noaa.gov"
+        - "emma.benedict@colostate.edu"
+        - "leif.fredericks@gmail.com"
+        - "kristenr@rams.colostate.edu"
+        - "frankemegan@gmail.com"
+        - "jcdehart@colostate.edu"
+        - "ivyglade@rams.colostate.edu"
+        - "olee@colostate.edu"
+        - "debasish.jana@colostate.edu"
+        - "jeffrey.gonzales@colostate.edu"
+        - "kwabena.opoku@colostate.edu"
+        - "aipa1027@colorado.edu"
+        - "paul.liyuanpu@gmail.com"
+        - "sean.heslin@colorado.edu"
+        - "mmbell@colostate.edu"
+        - "kpm17@colostate.edu"
+        - "veloso@colostate.edu"
+        - "lixin.lu@colostate.edu"
+        - "aspen.jk.morgan@colostate.edu"
+        - "juh.lee@colostate.edu"
+        - "Peter.marinescu@colostate.edu"
+        - "senne.van_loon@colostate.edu"
+        - "maria.rugenstein@colostate.edu"
+        - "levi.silvers@colostate.edu"
+        - "wchapman@colorado.edu"
   extraConfig:
     jupyterhub_config.py: |-
       c.KubeSpawner.start_timeout = 1200
@@ -80,20 +112,44 @@ proxy:
 
 singleuser:
   startTimeout: 1200 # 20 mins to spin up a notebook server for GPU including the image pull
+  image:
+    name: 384484506514.dkr.ecr.us-west-2.amazonaws.com/workshop/jupyter
+    tag: "v0.5.17"
   profileList:
-    - display_name: "Workshop GPU (g6e.xlarge / L40S)"
+    - display_name: "CPU (m6i)"
       default: true
-      description: "1× NVIDIA L40S (46 GB) | on-demand | Karpenter"
+      description: "CPU only | 4 vCPU / 16 GB RAM | on-demand | Karpenter"
       kubespawner_override:
-        image: 384484506514.dkr.ecr.us-west-2.amazonaws.com/workshop/jupyter:v0.2
+        cpu_limit: 4
+        cpu_guarantee: 2
+        mem_limit: 16G
+        mem_guarantee: 8G
+        cmd: "start-singleuser.sh"
+    - display_name: "GPU — L4 (24 GB VRAM)"
+      description: "1× NVIDIA L4 | 8 vCPU / 32 GB RAM | on-demand | Karpenter"
+      kubespawner_override:
         tolerations:
           - key: "nvidia.com/gpu"
             operator: "Exists"
             effect: "NoSchedule"
         extra_resource_limits:
           nvidia.com/gpu: "1"
-        cpu_limit: 4
-        cpu_guarantee: 2
+        cpu_limit: 8
+        cpu_guarantee: 4
+        mem_limit: 32G
+        mem_guarantee: 16G
+        cmd: "start-singleuser.sh"
+    - display_name: "GPU — L40S (46 GB VRAM)"
+      description: "1× NVIDIA L40S | 8 vCPU / 32 GB RAM | on-demand | Karpenter"
+      kubespawner_override:
+        tolerations:
+          - key: "nvidia.com/gpu"
+            operator: "Exists"
+            effect: "NoSchedule"
+        extra_resource_limits:
+          nvidia.com/gpu: "1"
+        cpu_limit: 8
+        cpu_guarantee: 4
         mem_limit: 32G
         mem_guarantee: 16G
         cmd: "start-singleuser.sh"
@@ -108,7 +164,7 @@ singleuser:
         claimName: efs-persist-shared
     extraVolumeMounts:
     - name: jupyterhub-shared
-      mountPath: /home/shared
+      mountPath: /data
       readOnly: false
   serviceAccountName: ${jupyter_single_user_sa_name}
   allowPrivilegeEscalation: true
@@ -120,7 +176,7 @@ singleuser:
     NOTEBOOK_ARGS: "--allow-root"
     CHOWN_HOME: "yes"
     CHOWN_HOME_OPTS: "-R"
-    CHOWN_EXTRA: "/home/shared"
+    CHOWN_EXTRA: "/data"
     HUGGING_FACE_HUB_TOKEN:
       valueFrom:
         secretKeyRef:

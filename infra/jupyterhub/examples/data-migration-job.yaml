@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gcs-to-efs-migration
+  namespace: jupyterhub
+spec:
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      serviceAccountName: workshop-jhub-jupyterhub-single-user
+      restartPolicy: Never
+      containers:
+        - name: sync
+          image: amazon/aws-cli:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting S3 → EFS sync..."
+              aws s3 sync s3://workshop-jhub-data-us-west-2/ /data/ \
+                --region us-west-2 \
+                --no-progress
+              echo "Sync complete."
+              ls -lah /data/
+          volumeMounts:
+            - name: efs-shared
+              mountPath: /data
+      volumes:
+        - name: efs-shared
+          persistentVolumeClaim:
+            claimName: efs-persist-shared
