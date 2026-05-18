@@ -53,14 +53,21 @@ hub:
         - "maria.rugenstein@colostate.edu"
         - "levi.silvers@colostate.edu"
         - "wchapman@colorado.edu"
+        - "benjamin.o.johnson@colostate.edu"
+        - "William.Kamp@colorado.edu"
+        - "vlad.adam.phone@gmail.com"
+        - "benj8295@gmail.com"
   extraConfig:
     jupyterhub_config.py: |-
-      c.KubeSpawner.start_timeout = 1200
+      c.KubeSpawner.start_timeout = 600
+      c.KubeSpawner.http_timeout = 120
       c.Authenticator.enable_auth_state = True
 
     cognito_config.py: |-
       import boto3
       def auth_state_hook(spawner, auth_state):
+        if not auth_state:
+          raise ValueError("auth_state is missing — user must log out and log back in to refresh credentials")
         client_idp = boto3.client('cognito-idp', region_name="${region}")
         auth_response = client_idp.initiate_auth(
           AuthFlow="REFRESH_TOKEN_AUTH",
@@ -111,7 +118,7 @@ proxy:
       service.beta.kubernetes.io/aws-load-balancer-ip-address-type: ipv4
 
 singleuser:
-  startTimeout: 1200 # 20 mins to spin up a notebook server for GPU including the image pull
+  startTimeout: 600 # 10 mins to spin up a notebook server for GPU including the image pull
   image:
     name: 384484506514.dkr.ecr.us-west-2.amazonaws.com/workshop/jupyter
     tag: "v0.6.0"
@@ -126,7 +133,7 @@ singleuser:
         mem_guarantee: 8G
         cmd: "start-singleuser.sh"
     - display_name: "GPU — L4 (24 GB VRAM)"
-      description: "1× NVIDIA L4 | 8 vCPU / 32 GB RAM | on-demand | Karpenter"
+      description: "1× NVIDIA L4 | 4 vCPU / 16 GB RAM | on-demand | Karpenter"
       kubespawner_override:
         tolerations:
           - key: "nvidia.com/gpu"
@@ -134,13 +141,15 @@ singleuser:
             effect: "NoSchedule"
         extra_resource_limits:
           nvidia.com/gpu: "1"
-        cpu_limit: 8
-        cpu_guarantee: 4
-        mem_limit: 32G
-        mem_guarantee: 16G
+        node_selector:
+          node.kubernetes.io/instance-type: g6.xlarge
+        cpu_limit: 3
+        cpu_guarantee: 2
+        mem_limit: 16G
+        mem_guarantee: 8G
         cmd: "start-singleuser.sh"
     - display_name: "GPU — L40S (46 GB VRAM)"
-      description: "1× NVIDIA L40S | 8 vCPU / 32 GB RAM | on-demand | Karpenter"
+      description: "1× NVIDIA L40S | 4 vCPU / 32 GB RAM | on-demand | Karpenter"
       kubespawner_override:
         tolerations:
           - key: "nvidia.com/gpu"
@@ -148,10 +157,12 @@ singleuser:
             effect: "NoSchedule"
         extra_resource_limits:
           nvidia.com/gpu: "1"
-        cpu_limit: 8
-        cpu_guarantee: 4
-        mem_limit: 32G
-        mem_guarantee: 16G
+        node_selector:
+          node.kubernetes.io/instance-type: g6e.xlarge
+        cpu_limit: 3
+        cpu_guarantee: 2
+        mem_limit: 24G
+        mem_guarantee: 12G
         cmd: "start-singleuser.sh"
   storage:
     type: "static"
@@ -176,7 +187,6 @@ singleuser:
     NOTEBOOK_ARGS: "--allow-root"
     CHOWN_HOME: "yes"
     CHOWN_HOME_OPTS: "-R"
-    CHOWN_EXTRA: "/data"
     HUGGING_FACE_HUB_TOKEN:
       valueFrom:
         secretKeyRef:
@@ -209,6 +219,6 @@ global:
 cull:
   enabled: true
   timeout: 1800    # 30 minutes idle → shut down server
-  every: 300       # poll every 5 minutes
+  every: 600       # poll every 5 minutes
   maxAge: 0        # no hard wall-clock limit
   concurrency: 5

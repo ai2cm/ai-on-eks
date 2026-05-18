@@ -19,8 +19,11 @@ spec:
               echo "Starting S3 → EFS sync..."
               aws s3 sync s3://workshop-jhub-data-us-west-2/ /data/ \
                 --region us-west-2 \
-                --no-progress
-              echo "Sync complete."
+                --no-progress \
+                --delete
+              echo "Sync complete. Removing empty directories..."
+              find /data -mindepth 1 -type d -empty -delete
+              echo "Done."
               ls -lah /data/
           volumeMounts:
             - name: efs-shared
